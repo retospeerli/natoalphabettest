@@ -34,7 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
     CHARLIE: ['CHARLIE', 'CHARLEY'],
     DELTA: ['DELTA'],
     ECHO: ['ECHO', 'ECO', 'EKO'],
-    FOXTROT: ['FOXTROT', 'FOX TROT'],
+    FOXTROT: ['FOXTROT', 'FOXTROTT', 'FOX TROT'],
     GOLF: ['GOLF', 'GULF'],
     HOTEL: ['HOTEL'],
     INDIA: ['INDIA'],
@@ -66,8 +66,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const LETTERS = Object.keys(NATO);
   const MAX_ERRORS = 3;
-  const AUTO_STOP_SILENCE_MS = 3500;
-  const LETTER_TIME_LIMIT_MS = 2000;
+  const NAME_AUTO_STOP_SILENCE_MS = 3500;
+  const LETTER_PHASE_DURATION_MS = 60000;
 
   const startScreen = document.getElementById('startScreen');
   const examScreen = document.getElementById('examScreen');
@@ -105,20 +105,30 @@ document.addEventListener('DOMContentLoaded', () => {
   const resultList = document.getElementById('resultList');
   const solutionBox = document.getElementById('solutionBox');
 
+  if (
+    !speechStatusPill ||
+    !firstNameInput ||
+    !lastNameInput ||
+    !startExamBtn ||
+    !recordBtn
+  ) {
+    console.error('Wichtige DOM-Elemente fehlen.');
+    return;
+  }
+
   let SpeechRecognitionCtor = null;
   let recognitionSupported = false;
   let recognition = null;
   let recognitionRunning = false;
   let silenceTimer = null;
-  let letterTimer = null;
-  let letterAnimationFrame = null;
+  let hardStopTimer = null;
+  let timerAnimationFrame = null;
 
   let aggregatedFinalTranscript = '';
   let latestInterimTranscript = '';
 
   let nameTasks = [];
   let alphabetTasks = [];
-  let currentLetterIndex = 0;
   let errorCount = 0;
   let examResults = [];
   let currentPhase = 'name';
@@ -162,45 +172,57 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function clearLetterTimer() {
-    if (letterTimer) {
-      clearTimeout(letterTimer);
-      letterTimer = null;
-    }
-    if (letterAnimationFrame) {
-      cancelAnimationFrame(letterAnimationFrame);
-      letterAnimationFrame = null;
+  function clearHardStopTimer() {
+    if (hardStopTimer) {
+      clearTimeout(hardStopTimer);
+      hardStopTimer = null;
     }
   }
 
-  function showTimer(show) {
-    timerWrap.classList.toggle('hidden', !show);
-    timerWrap.setAttribute('aria-hidden', show ? 'false' : 'true');
+  function clearAnimatedTimer() {
+    if (timerAnimationFrame) {
+      cancelAnimationFrame(timerAnimationFrame);
+      timerAnimationFrame = null;
+    }
   }
 
-  function startLetterTimer() {
-    clearLetterTimer();
-    showTimer(true);
+  function hideTimer() {
+    timerWrap.classList.add('hidden');
+    timerWrap.setAttribute('aria-hidden', 'true');
+    timerBar.style.transform = 'scaleX(1)';
+    clearAnimatedTimer();
+    clearHardStopTimer();
+  }
 
-    const startTime = performance.now();
+  function showTimer() {
+    timerWrap.classList.remove('hidden');
+    timerWrap.setAttribute('aria-hidden', 'false');
+  }
+
+  function startMinuteTimer() {
+    showTimer();
+    clearAnimatedTimer();
+    clearHardStopTimer();
+
+    const start = performance.now();
 
     const animate = (now) => {
-      const elapsed = now - startTime;
-      const progress = Math.max(0, 1 - elapsed / LETTER_TIME_LIMIT_MS);
+      const elapsed = now - start;
+      const progress = Math.max(0, 1 - elapsed / LETTER_PHASE_DURATION_MS);
       timerBar.style.transform = `scaleX(${progress})`;
 
       if (progress > 0) {
-        letterAnimationFrame = requestAnimationFrame(animate);
+        timerAnimationFrame = requestAnimationFrame(animate);
       }
     };
 
     timerBar.style.transform = 'scaleX(1)';
-    letterAnimationFrame = requestAnimationFrame(animate);
+    timerAnimationFrame = requestAnimationFrame(animate);
 
-    letterTimer = setTimeout(() => {
+    hardStopTimer = setTimeout(() => {
       stopRecognition();
-      finalizeSingleLetterRecording(true);
-    }, LETTER_TIME_LIMIT_MS);
+      finalizeAlphabetRecording();
+    }, LETTER_PHASE_DURATION_MS);
   }
 
   function resetSpeechBuffers() {
@@ -262,7 +284,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function stopRecognition() {
     clearSilenceTimer();
-    clearLetterTimer();
+    clearHardStopTimer();
+    clearAnimatedTimer();
 
     if (recognition) {
       try {
@@ -302,31 +325,29 @@ document.addEventListener('DOMContentLoaded', () => {
     promptSubText.textContent = 'Gesamter Name in einem Durchgang';
 
     continueRow.classList.add('hidden');
-    showTimer(false);
+    hideTimer();
     resetSpeechBuffers();
     setRecordingVisual(false);
     updateStatusLine('Bereit.');
   }
 
-  function renderLetterPhase() {
+  function renderAlphabetPhase() {
     currentPhase = 'alphabet';
-    const task = alphabetTasks[currentLetterIndex];
-
     phasePill.textContent = 'Alphabet';
-    progressPill.textContent = `${currentLetterIndex + 1} / ${alphabetTasks.length}`;
+    progressPill.textContent = '2 / 2';
     errorsPill.textContent = `Fehler: ${errorCount} / ${MAX_ERRORS}`;
 
     exerciseTypeLabel.textContent = 'Prüfung';
-    exerciseTitle.textContent = 'Sprich den NATO-Begriff';
-    exerciseInstruction.textContent = 'Drücke auf die Aufnahmetaste. Du hast pro Buchstabe nur 2 Sekunden.';
-    promptLetter.textContent = task.expectedLetter;
-    promptSubText.textContent = 'Einzelner Buchstabe auf Zeit';
+    exerciseTitle.textContent = 'Buchstabiere alle Buchstaben';
+    exerciseInstruction.textContent = 'Drücke auf die Aufnahmetaste und sprich nun alle angezeigten Buchstaben in der Reihenfolge laut im NATO-Alphabet. Die Aufnahme läuft genau 1 Minute.';
+    promptLetter.textContent = alphabetTasks.map((task) => task.expectedLetter).join(' ');
+    promptSubText.textContent = 'Alle Buchstaben in dieser Reihenfolge, ohne Unterbrechung';
 
     continueRow.classList.add('hidden');
     resetSpeechBuffers();
     setRecordingVisual(false);
     updateStatusLine('Bereit.');
-    showTimer(true);
+    showTimer();
     timerBar.style.transform = 'scaleX(1)';
   }
 
@@ -357,43 +378,43 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    updateStatusLine(isCorrect ? 'Name korrekt. Jetzt folgt Teil 2.' : 'Name erfasst. Jetzt folgt Teil 2.');
+    updateStatusLine('Teil 1 beendet. Starte jetzt den Buchstaben-Test.');
     continueRow.classList.remove('hidden');
-    showTimer(false);
+    hideTimer();
   }
 
-  function finalizeSingleLetterRecording(timeoutReached = false) {
-    const task = alphabetTasks[currentLetterIndex];
+  function finalizeAlphabetRecording() {
     const detectedWords = getDetectedWords();
-    const detectedWord = detectedWords.length ? detectedWords[detectedWords.length - 1] : '';
-    const isCorrect = detectedWord === task.expectedWord;
+    const expectedWords = alphabetTasks.map((task) => task.expectedWord);
 
-    examResults.push({
-      type: 'letter',
-      label: task.expectedLetter,
-      expected: task.expectedWord,
-      detected: detectedWord || (timeoutReached ? 'Zeit abgelaufen' : '—'),
-      correct: isCorrect,
-      phaseLabel: 'Alphabet'
+    let phaseErrors = 0;
+
+    expectedWords.forEach((expectedWord, index) => {
+      const detectedWord = detectedWords[index] || '';
+      const isCorrect = detectedWord === expectedWord;
+
+      examResults.push({
+        type: 'letter-sequence',
+        label: alphabetTasks[index].expectedLetter,
+        expected: expectedWord,
+        detected: detectedWord || '—',
+        correct: isCorrect,
+        phaseLabel: 'Alphabet'
+      });
+
+      if (!isCorrect) {
+        phaseErrors += 1;
+      }
     });
 
-    if (!isCorrect) {
-      errorCount += 1;
-    }
+    errorCount += phaseErrors;
 
     if (errorCount > MAX_ERRORS) {
       showFinalResult(false);
       return;
     }
 
-    currentLetterIndex += 1;
-
-    if (currentLetterIndex >= alphabetTasks.length) {
-      showFinalResult(true);
-      return;
-    }
-
-    renderLetterPhase();
+    showFinalResult(true);
   }
 
   function startNameRecognition() {
@@ -452,7 +473,7 @@ document.addEventListener('DOMContentLoaded', () => {
         silenceTimer = setTimeout(() => {
           stopRecognition();
           finalizeNameRecording();
-        }, AUTO_STOP_SILENCE_MS);
+        }, NAME_AUTO_STOP_SILENCE_MS);
       };
 
       recognition.onsoundend = () => {
@@ -460,7 +481,7 @@ document.addEventListener('DOMContentLoaded', () => {
         silenceTimer = setTimeout(() => {
           stopRecognition();
           finalizeNameRecording();
-        }, AUTO_STOP_SILENCE_MS);
+        }, NAME_AUTO_STOP_SILENCE_MS);
       };
 
       recognition.onerror = () => {
@@ -480,7 +501,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function startLetterRecognition() {
+  function startAlphabetRecognition() {
     if (!recognitionSupported || !SpeechRecognitionCtor) {
       updateStatusLine('Spracherkennung nicht verfügbar.');
       return;
@@ -500,7 +521,7 @@ document.addEventListener('DOMContentLoaded', () => {
         recognitionRunning = true;
         setRecordingVisual(true);
         updateStatusLine('');
-        startLetterTimer();
+        startMinuteTimer();
       };
 
       recognition.onresult = (event) => {
@@ -525,7 +546,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       recognition.onerror = () => {
         stopRecognition();
-        finalizeSingleLetterRecording(false);
+        finalizeAlphabetRecording();
       };
 
       recognition.onend = () => {
@@ -542,6 +563,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function showFinalResult(passedByCount) {
     stopRecognition();
+    hideTimer();
 
     const passed = passedByCount && errorCount <= MAX_ERRORS;
 
@@ -579,7 +601,6 @@ document.addEventListener('DOMContentLoaded', () => {
     namePromptText = `${first} ${last}`;
     nameTasks = buildNameTasks(first, last);
     alphabetTasks = buildAlphabetTasks();
-    currentLetterIndex = 0;
     errorCount = 0;
     examResults = [];
 
@@ -592,6 +613,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function backToStart() {
     stopRecognition();
+    hideTimer();
     examScreen.classList.add('hidden');
     resultScreen.classList.add('hidden');
     startScreen.classList.remove('hidden');
@@ -650,18 +672,18 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
 
     <div class="card">
-      <h2>Teil 2: Einzelne Buchstaben</h2>
-      <p>Danach startest du mit einem Knopf den zweiten Teil. Jetzt kommen alle Buchstaben einzeln in gemischter Reihenfolge. Für jeden Buchstaben hast du nur 2 Sekunden.</p>
+      <h2>Teil 2: Alle Buchstaben</h2>
+      <p>Danach startest du den zweiten Teil mit einem Knopf. Jetzt siehst du alle Buchstaben in einer gemischten Reihenfolge. Du sprichst sie in genau dieser Reihenfolge laut im NATO-Alphabet.</p>
     </div>
 
     <div class="card">
-      <h2>Der Balken</h2>
-      <p>Im zweiten Teil zeigt dir ein Balken, wie viel Zeit noch übrig ist. Wenn der Balken ganz klein ist, ist die Zeit fast vorbei.</p>
+      <h2>Eine Minute Zeit</h2>
+      <p>Im zweiten Teil läuft die Aufnahme genau eine Minute lang. Der Balken zeigt dir, wie viel Zeit noch übrig ist. Am Schluss wird alles zusammen verglichen.</p>
     </div>
 
     <div class="card">
       <h2>Bestanden oder nicht?</h2>
-      <p>Du darfst höchstens 3 Fehler machen. Nur dann bekommst du am Ende das Lösungswort.</p>
+      <p>Du darfst höchstens 3 Fehler machen. Nur dann bekommst du das Lösungswort.</p>
     </div>
   </div>
 </body>
@@ -692,21 +714,19 @@ document.addEventListener('DOMContentLoaded', () => {
       if (currentPhase === 'name') {
         finalizeNameRecording();
       } else {
-        finalizeSingleLetterRecording(false);
+        finalizeAlphabetRecording();
       }
     } else {
       if (currentPhase === 'name') {
         startNameRecognition();
       } else {
-        startLetterRecognition();
+        startAlphabetRecognition();
       }
     }
   });
 
   startLettersBtn.addEventListener('click', () => {
-    currentPhase = 'alphabet';
-    currentLetterIndex = 0;
-    renderLetterPhase();
+    renderAlphabetPhase();
   });
 
   openHelpBtn.addEventListener('click', openHelpWindow);
@@ -715,4 +735,5 @@ document.addEventListener('DOMContentLoaded', () => {
   updateSpeechAvailability();
   setRecordingVisual(false);
   updateStatusLine('Bereit.');
+  hideTimer();
 });
