@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NATO-Prüfung</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <section id="startScreen" class="screen">
+      <div class="card hero">
+        <div class="hero-top">
+          <div>
+            <p class="eyebrow">NATO-Prüfung</p>
+            <h1>Buchstabiere richtig</h1>
+            <p class="lead">
+              Zuerst wird dein Name geprüft. Danach kommen alle Buchstaben einzeln in zufälliger Reihenfolge.
+              Du darfst höchstens <strong>3 Fehler</strong> machen.
+            </p>
+          </div>
+
+          <button id="openHelpBtn" class="icon-btn" type="button">Info</button>
+        </div>
+
+        <div class="status-row">
+          <span class="status-pill">Name zuerst</span>
+          <span class="status-pill">Dann A–Z gemischt</span>
+          <span class="status-pill" id="speechStatusPill">Spracherkennung wird geprüft …</span>
+        </div>
+      </div>
+
+      <div class="card form-card">
+        <h2>Dein Name</h2>
+
+        <div class="form-grid">
+          <label class="field">
+            <span>Vorname</span>
+            <input id="firstNameInput" type="text" autocomplete="given-name" />
+          </label>
+
+          <label class="field">
+            <span>Nachname</span>
+            <input id="lastNameInput" type="text" autocomplete="family-name" />
+          </label>
+        </div>
+
+        <div class="action-row">
+          <button id="startExamBtn" class="primary-btn" type="button">Prüfung starten</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="examScreen" class="screen hidden">
+      <div class="card topbar">
+        <button id="backToStartBtn" class="ghost-btn" type="button">← Zurück</button>
+
+        <div class="topbar-pills">
+          <span class="status-pill" id="phasePill">Phase</span>
+          <span class="status-pill" id="progressPill">1 / 1</span>
+          <span class="status-pill" id="errorsPill">Fehler: 0 / 3</span>
+        </div>
+
+        <button id="openHelpBtnExam" class="icon-btn" type="button">Info</button>
+      </div>
+
+      <div class="exam-layout">
+        <section class="card main-card">
+          <p class="eyebrow" id="exerciseTypeLabel">Prüfung</p>
+          <h2 id="exerciseTitle">Sprich den NATO-Begriff</h2>
+          <p class="instruction" id="exerciseInstruction">
+            Drücke auf die Aufnahmetaste und sprich den passenden NATO-Begriff.
+          </p>
+
+          <div class="prompt-box">
+            <div class="prompt-main" id="promptLetter">A</div>
+            <div class="prompt-sub" id="promptSubText">Buchstabe</div>
+          </div>
+
+          <div class="recording-area">
+            <button id="recordBtn" class="record-btn" type="button" aria-pressed="false">
+              Aufnahme
+            </button>
+          </div>
+
+          <div class="status-line" id="statusLine">Bereit.</div>
+        </section>
+
+        <aside class="card side-card">
+          <h3>Prüfungsregeln</h3>
+          <p>Du sprichst immer genau einen NATO-Begriff zu einem Buchstaben.</p>
+          <p>Die Aufnahme stoppt erst nach einer längeren Sprechpause oder wenn du den Button nochmals drückst.</p>
+          <p>Mit mehr als 3 Fehlern ist die Prüfung nicht bestanden.</p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="resultScreen" class="screen hidden">
+      <div class="card">
+        <p class="eyebrow">Ergebnis</p>
+        <h2 id="resultTitle">Prüfung beendet</h2>
+        <p id="resultSummary"></p>
+
+        <div id="solutionBox" class="solution-box hidden">
+          <div class="solution-label">Lösungswort</div>
+          <div class="solution-text">Notiere den Nachnamen deines Lehrers</div>
+        </div>
+
+        <div class="result-list" id="resultList"></div>
+
+        <div class="action-row">
+          <button id="restartBtn" class="primary-btn" type="button">Neue Prüfung</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
