@@ -57,11 +57,6 @@ document.addEventListener('DOMContentLoaded', () => {
     ZULU: ['ZULU']
   };
 
-  const REVERSE_NATO = {};
-  Object.entries(NATO).forEach(([char, word]) => {
-    REVERSE_NATO[word] = char;
-  });
-
   const SPOKEN_TO_CANONICAL = {};
   Object.entries(SPOKEN_VARIANTS).forEach(([canonical, variants]) => {
     variants.forEach((variant) => {
@@ -72,6 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const LETTERS = Object.keys(NATO);
   const MAX_ERRORS = 3;
   const AUTO_STOP_SILENCE_MS = 3500;
+  const LETTER_TIME_LIMIT_MS = 2000;
 
   const startScreen = document.getElementById('startScreen');
   const examScreen = document.getElementById('examScreen');
@@ -83,6 +79,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const startExamBtn = document.getElementById('startExamBtn');
   const backToStartBtn = document.getElementById('backToStartBtn');
   const restartBtn = document.getElementById('restartBtn');
+  const startLettersBtn = document.getElementById('startLettersBtn');
+  const continueRow = document.getElementById('continueRow');
 
   const openHelpBtn = document.getElementById('openHelpBtn');
   const openHelpBtnExam = document.getElementById('openHelpBtnExam');
@@ -99,35 +97,32 @@ document.addEventListener('DOMContentLoaded', () => {
   const recordBtn = document.getElementById('recordBtn');
   const statusLine = document.getElementById('statusLine');
 
+  const timerWrap = document.getElementById('timerWrap');
+  const timerBar = document.getElementById('timerBar');
+
   const resultTitle = document.getElementById('resultTitle');
   const resultSummary = document.getElementById('resultSummary');
   const resultList = document.getElementById('resultList');
   const solutionBox = document.getElementById('solutionBox');
-
-  if (
-    !speechStatusPill ||
-    !firstNameInput ||
-    !lastNameInput ||
-    !startExamBtn ||
-    !recordBtn
-  ) {
-    console.error('Wichtige DOM-Elemente fehlen.');
-    return;
-  }
 
   let SpeechRecognitionCtor = null;
   let recognitionSupported = false;
   let recognition = null;
   let recognitionRunning = false;
   let silenceTimer = null;
+  let letterTimer = null;
+  let letterAnimationFrame = null;
 
   let aggregatedFinalTranscript = '';
   let latestInterimTranscript = '';
 
-  let examTasks = [];
-  let currentTaskIndex = 0;
+  let nameTasks = [];
+  let alphabetTasks = [];
+  let currentLetterIndex = 0;
   let errorCount = 0;
   let examResults = [];
+  let currentPhase = 'name';
+  let namePromptText = '';
 
   function normalizeNameText(text) {
     return (text || '')
@@ -167,6 +162,47 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function clearLetterTimer() {
+    if (letterTimer) {
+      clearTimeout(letterTimer);
+      letterTimer = null;
+    }
+    if (letterAnimationFrame) {
+      cancelAnimationFrame(letterAnimationFrame);
+      letterAnimationFrame = null;
+    }
+  }
+
+  function showTimer(show) {
+    timerWrap.classList.toggle('hidden', !show);
+    timerWrap.setAttribute('aria-hidden', show ? 'false' : 'true');
+  }
+
+  function startLetterTimer() {
+    clearLetterTimer();
+    showTimer(true);
+
+    const startTime = performance.now();
+
+    const animate = (now) => {
+      const elapsed = now - startTime;
+      const progress = Math.max(0, 1 - elapsed / LETTER_TIME_LIMIT_MS);
+      timerBar.style.transform = `scaleX(${progress})`;
+
+      if (progress > 0) {
+        letterAnimationFrame = requestAnimationFrame(animate);
+      }
+    };
+
+    timerBar.style.transform = 'scaleX(1)';
+    letterAnimationFrame = requestAnimationFrame(animate);
+
+    letterTimer = setTimeout(() => {
+      stopRecognition();
+      finalizeSingleLetterRecording(true);
+    }, LETTER_TIME_LIMIT_MS);
+  }
+
   function resetSpeechBuffers() {
     aggregatedFinalTranscript = '';
     latestInterimTranscript = '';
@@ -174,43 +210,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function buildNameTasks(firstName, lastName) {
     const fullName = `${firstName}${lastName}`;
-    return fullName.split('').map((letter, index) => ({
+    return fullName.split('').map((letter) => ({
       expectedLetter: letter,
-      expectedWord: NATO[letter],
-      phaseLabel: 'Name',
-      promptSub: `Buchstabe ${index + 1} aus deinem Namen`
+      expectedWord: NATO[letter]
     }));
   }
 
   function buildAlphabetTasks() {
     return shuffle([...LETTERS]).map((letter) => ({
       expectedLetter: letter,
-      expectedWord: NATO[letter],
-      phaseLabel: 'Alphabet',
-      promptSub: 'Einzelner Buchstabe'
+      expectedWord: NATO[letter]
     }));
-  }
-
-  function updateHeader() {
-    const task = examTasks[currentTaskIndex];
-    phasePill.textContent = task.phaseLabel;
-    progressPill.textContent = `${currentTaskIndex + 1} / ${examTasks.length}`;
-    errorsPill.textContent = `Fehler: ${errorCount} / ${MAX_ERRORS}`;
-  }
-
-  function renderTask() {
-    const task = examTasks[currentTaskIndex];
-
-    updateHeader();
-    exerciseTypeLabel.textContent = 'Prüfung';
-    exerciseTitle.textContent = 'Sprich den NATO-Begriff';
-    exerciseInstruction.textContent = 'Drücke auf die Aufnahmetaste und sprich genau einen passenden NATO-Begriff.';
-    promptLetter.textContent = task.expectedLetter;
-    promptSubText.textContent = task.promptSub;
-
-    resetSpeechBuffers();
-    setRecordingVisual(false);
-    updateStatusLine('Bereit.');
   }
 
   function tokenizeTranscript(transcript) {
@@ -245,14 +255,14 @@ document.addEventListener('DOMContentLoaded', () => {
     return tokens;
   }
 
-  function getDetectedCanonicalWord() {
+  function getDetectedWords() {
     const combined = `${aggregatedFinalTranscript} ${latestInterimTranscript}`.trim();
-    const tokens = tokenizeTranscript(combined);
-    return tokens.length ? tokens[tokens.length - 1] : '';
+    return tokenizeTranscript(combined);
   }
 
   function stopRecognition() {
     clearSilenceTimer();
+    clearLetterTimer();
 
     if (recognition) {
       try {
@@ -279,17 +289,92 @@ document.addEventListener('DOMContentLoaded', () => {
     setRecordingVisual(false);
   }
 
-  function finalizeCurrentRecording() {
-    const task = examTasks[currentTaskIndex];
-    const detectedWord = getDetectedCanonicalWord();
+  function renderNamePhase() {
+    currentPhase = 'name';
+    phasePill.textContent = 'Name';
+    progressPill.textContent = '1 / 2';
+    errorsPill.textContent = `Fehler: ${errorCount} / ${MAX_ERRORS}`;
+
+    exerciseTypeLabel.textContent = 'Prüfung';
+    exerciseTitle.textContent = 'Buchstabiere deinen Namen';
+    exerciseInstruction.textContent = 'Drücke auf die Aufnahmetaste und buchstabiere deinen ganzen Namen laut im NATO-Alphabet.';
+    promptLetter.textContent = namePromptText;
+    promptSubText.textContent = 'Gesamter Name in einem Durchgang';
+
+    continueRow.classList.add('hidden');
+    showTimer(false);
+    resetSpeechBuffers();
+    setRecordingVisual(false);
+    updateStatusLine('Bereit.');
+  }
+
+  function renderLetterPhase() {
+    currentPhase = 'alphabet';
+    const task = alphabetTasks[currentLetterIndex];
+
+    phasePill.textContent = 'Alphabet';
+    progressPill.textContent = `${currentLetterIndex + 1} / ${alphabetTasks.length}`;
+    errorsPill.textContent = `Fehler: ${errorCount} / ${MAX_ERRORS}`;
+
+    exerciseTypeLabel.textContent = 'Prüfung';
+    exerciseTitle.textContent = 'Sprich den NATO-Begriff';
+    exerciseInstruction.textContent = 'Drücke auf die Aufnahmetaste. Du hast pro Buchstabe nur 2 Sekunden.';
+    promptLetter.textContent = task.expectedLetter;
+    promptSubText.textContent = 'Einzelner Buchstabe auf Zeit';
+
+    continueRow.classList.add('hidden');
+    resetSpeechBuffers();
+    setRecordingVisual(false);
+    updateStatusLine('Bereit.');
+    showTimer(true);
+    timerBar.style.transform = 'scaleX(1)';
+  }
+
+  function finalizeNameRecording() {
+    const detectedWords = getDetectedWords();
+    const expectedWords = nameTasks.map((task) => task.expectedWord);
+    const detectedString = detectedWords.join(' ');
+    const expectedString = expectedWords.join(' ');
+    const isCorrect = detectedString === expectedString;
+
+    examResults.push({
+      type: 'name',
+      label: namePromptText,
+      expected: expectedString,
+      detected: detectedString || '—',
+      correct: isCorrect,
+      phaseLabel: 'Name'
+    });
+
+    if (!isCorrect) {
+      errorCount += 1;
+    }
+
+    errorsPill.textContent = `Fehler: ${errorCount} / ${MAX_ERRORS}`;
+
+    if (errorCount > MAX_ERRORS) {
+      showFinalResult(false);
+      return;
+    }
+
+    updateStatusLine(isCorrect ? 'Name korrekt. Jetzt folgt Teil 2.' : 'Name erfasst. Jetzt folgt Teil 2.');
+    continueRow.classList.remove('hidden');
+    showTimer(false);
+  }
+
+  function finalizeSingleLetterRecording(timeoutReached = false) {
+    const task = alphabetTasks[currentLetterIndex];
+    const detectedWords = getDetectedWords();
+    const detectedWord = detectedWords.length ? detectedWords[detectedWords.length - 1] : '';
     const isCorrect = detectedWord === task.expectedWord;
 
     examResults.push({
-      letter: task.expectedLetter,
+      type: 'letter',
+      label: task.expectedLetter,
       expected: task.expectedWord,
-      detected: detectedWord || '—',
+      detected: detectedWord || (timeoutReached ? 'Zeit abgelaufen' : '—'),
       correct: isCorrect,
-      phaseLabel: task.phaseLabel
+      phaseLabel: 'Alphabet'
     });
 
     if (!isCorrect) {
@@ -301,17 +386,17 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    currentTaskIndex += 1;
+    currentLetterIndex += 1;
 
-    if (currentTaskIndex >= examTasks.length) {
+    if (currentLetterIndex >= alphabetTasks.length) {
       showFinalResult(true);
       return;
     }
 
-    renderTask();
+    renderLetterPhase();
   }
 
-  function startRecognition() {
+  function startNameRecognition() {
     if (!recognitionSupported || !SpeechRecognitionCtor) {
       updateStatusLine('Spracherkennung nicht verfügbar.');
       return;
@@ -366,7 +451,7 @@ document.addEventListener('DOMContentLoaded', () => {
         clearSilenceTimer();
         silenceTimer = setTimeout(() => {
           stopRecognition();
-          finalizeCurrentRecording();
+          finalizeNameRecording();
         }, AUTO_STOP_SILENCE_MS);
       };
 
@@ -374,13 +459,73 @@ document.addEventListener('DOMContentLoaded', () => {
         clearSilenceTimer();
         silenceTimer = setTimeout(() => {
           stopRecognition();
-          finalizeCurrentRecording();
+          finalizeNameRecording();
         }, AUTO_STOP_SILENCE_MS);
       };
 
       recognition.onerror = () => {
         stopRecognition();
         updateStatusLine('Aufnahme fehlgeschlagen. Bitte nochmals drücken.');
+      };
+
+      recognition.onend = () => {
+        recognitionRunning = false;
+        setRecordingVisual(false);
+      };
+
+      recognition.start();
+    } catch (error) {
+      stopRecognition();
+      updateStatusLine('Aufnahme konnte nicht gestartet werden.');
+    }
+  }
+
+  function startLetterRecognition() {
+    if (!recognitionSupported || !SpeechRecognitionCtor) {
+      updateStatusLine('Spracherkennung nicht verfügbar.');
+      return;
+    }
+
+    stopRecognition();
+    resetSpeechBuffers();
+
+    try {
+      recognition = new SpeechRecognitionCtor();
+      recognition.lang = 'en-US';
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        recognitionRunning = true;
+        setRecordingVisual(true);
+        updateStatusLine('');
+        startLetterTimer();
+      };
+
+      recognition.onresult = (event) => {
+        let finalPart = '';
+        let interimPart = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const transcript = event.results[i][0].transcript || '';
+          if (event.results[i].isFinal) {
+            finalPart += `${transcript} `;
+          } else {
+            interimPart += `${transcript} `;
+          }
+        }
+
+        if (finalPart.trim()) {
+          aggregatedFinalTranscript = `${aggregatedFinalTranscript} ${finalPart}`.trim();
+        }
+
+        latestInterimTranscript = interimPart.trim();
+      };
+
+      recognition.onerror = () => {
+        stopRecognition();
+        finalizeSingleLetterRecording(false);
       };
 
       recognition.onend = () => {
@@ -413,7 +558,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const div = document.createElement('div');
       div.className = `result-item ${item.correct ? 'good' : 'bad'}`;
       div.innerHTML = `
-        <strong>Aufgabe ${index + 1}: ${item.letter}</strong><br>
+        <strong>Aufgabe ${index + 1}: ${item.label}</strong><br>
         Bereich: ${item.phaseLabel}<br>
         Deine Antwort: ${item.detected}<br>
         Richtige Lösung: ${item.expected}
@@ -431,12 +576,10 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    examTasks = [
-      ...buildNameTasks(first, last),
-      ...buildAlphabetTasks()
-    ];
-
-    currentTaskIndex = 0;
+    namePromptText = `${first} ${last}`;
+    nameTasks = buildNameTasks(first, last);
+    alphabetTasks = buildAlphabetTasks();
+    currentLetterIndex = 0;
     errorCount = 0;
     examResults = [];
 
@@ -444,7 +587,7 @@ document.addEventListener('DOMContentLoaded', () => {
     resultScreen.classList.add('hidden');
     examScreen.classList.remove('hidden');
 
-    renderTask();
+    renderNamePhase();
   }
 
   function backToStart() {
@@ -503,17 +646,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     <div class="card">
       <h2>Teil 1: Dein Name</h2>
-      <p>Am Anfang gibst du deinen Vorname und Nachname ein. Danach zeigt dir die App die Buchstaben aus deinem Namen nacheinander. Zu jedem Buchstaben sprichst du den passenden NATO-Begriff.</p>
+      <p>Am Anfang gibst du deinen Vorname und Nachname ein. Dann drückst du auf Aufnahme und buchstabierst deinen ganzen Namen in einem Durchgang laut im NATO-Alphabet.</p>
     </div>
 
     <div class="card">
-      <h2>Teil 2: Alle Buchstaben</h2>
-      <p>Danach kommen alle Buchstaben A bis Z einzeln. Die Reihenfolge ist gemischt. Auch hier sprichst du immer den passenden NATO-Begriff.</p>
+      <h2>Teil 2: Einzelne Buchstaben</h2>
+      <p>Danach startest du mit einem Knopf den zweiten Teil. Jetzt kommen alle Buchstaben einzeln in gemischter Reihenfolge. Für jeden Buchstaben hast du nur 2 Sekunden.</p>
     </div>
 
     <div class="card">
-      <h2>So nimmst du auf</h2>
-      <p>Drücke auf den Aufnahme-Button. Dann wird der Button rot. Das zeigt: Die Aufnahme läuft. Sprich deutlich. Die Aufnahme stoppt erst nach einer längeren Pause oder wenn du den Button nochmals drückst.</p>
+      <h2>Der Balken</h2>
+      <p>Im zweiten Teil zeigt dir ein Balken, wie viel Zeit noch übrig ist. Wenn der Balken ganz klein ist, ist die Zeit fast vorbei.</p>
     </div>
 
     <div class="card">
@@ -545,10 +688,25 @@ document.addEventListener('DOMContentLoaded', () => {
   recordBtn.addEventListener('click', () => {
     if (recognitionRunning) {
       stopRecognition();
-      finalizeCurrentRecording();
+
+      if (currentPhase === 'name') {
+        finalizeNameRecording();
+      } else {
+        finalizeSingleLetterRecording(false);
+      }
     } else {
-      startRecognition();
+      if (currentPhase === 'name') {
+        startNameRecognition();
+      } else {
+        startLetterRecognition();
+      }
     }
+  });
+
+  startLettersBtn.addEventListener('click', () => {
+    currentPhase = 'alphabet';
+    currentLetterIndex = 0;
+    renderLetterPhase();
   });
 
   openHelpBtn.addEventListener('click', openHelpWindow);
