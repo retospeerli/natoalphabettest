@@ -15,7 +15,7 @@
             <p class="eyebrow">NATO-Prüfung</p>
             <h1>Buchstabiere richtig</h1>
             <p class="lead">
-              Zuerst wird dein Name geprüft. Danach kommen alle Buchstaben einzeln in zufälliger Reihenfolge.
+              Zuerst buchstabierst du deinen ganzen Namen in einem Durchgang. Danach folgen einzelne Buchstaben auf Zeit.
               Du darfst höchstens <strong>3 Fehler</strong> machen.
             </p>
           </div>
@@ -26,6 +26,7 @@
         <div class="status-row">
           <span class="status-pill">Name zuerst</span>
           <span class="status-pill">Dann A–Z gemischt</span>
+          <span class="status-pill">Max. 3 Fehler</span>
           <span class="status-pill" id="speechStatusPill">Spracherkennung wird geprüft …</span>
         </div>
       </div>
@@ -67,14 +68,18 @@
       <div class="exam-layout">
         <section class="card main-card">
           <p class="eyebrow" id="exerciseTypeLabel">Prüfung</p>
-          <h2 id="exerciseTitle">Sprich den NATO-Begriff</h2>
+          <h2 id="exerciseTitle">Namen buchstabieren</h2>
           <p class="instruction" id="exerciseInstruction">
-            Drücke auf die Aufnahmetaste und sprich den passenden NATO-Begriff.
+            Drücke auf die Aufnahmetaste und buchstabiere deinen ganzen Namen laut im NATO-Alphabet.
           </p>
 
           <div class="prompt-box">
-            <div class="prompt-main" id="promptLetter">A</div>
-            <div class="prompt-sub" id="promptSubText">Buchstabe</div>
+            <div class="prompt-main" id="promptLetter">NAME</div>
+            <div class="prompt-sub" id="promptSubText">Gesamter Name in einem Durchgang</div>
+          </div>
+
+          <div id="timerWrap" class="timer-wrap hidden" aria-hidden="true">
+            <div class="timer-bar" id="timerBar"></div>
           </div>
 
           <div class="recording-area">
@@ -83,14 +88,19 @@
             </button>
           </div>
 
+          <div class="action-row center-row hidden" id="continueRow">
+            <button id="startLettersBtn" class="primary-btn" type="button">Buchstaben starten</button>
+          </div>
+
           <div class="status-line" id="statusLine">Bereit.</div>
         </section>
 
         <aside class="card side-card">
           <h3>Prüfungsregeln</h3>
-          <p>Du sprichst immer genau einen NATO-Begriff zu einem Buchstaben.</p>
-          <p>Die Aufnahme stoppt erst nach einer längeren Sprechpause oder wenn du den Button nochmals drückst.</p>
-          <p>Mit mehr als 3 Fehlern ist die Prüfung nicht bestanden.</p>
+          <p><strong>Teil 1:</strong> Deinen Namen in einem Durchgang buchstabieren.</p>
+          <p><strong>Teil 2:</strong> Einzelne Buchstaben in gemischter Reihenfolge.</p>
+          <p>Im zweiten Teil hast du pro Buchstabe nur <strong>2 Sekunden</strong>.</p>
+          <p>Mehr als 3 Fehler bedeuten: nicht bestanden.</p>
         </aside>
       </div>
     </section>
