@@ -109,6 +109,10 @@ h1 {
   align-items: center;
 }
 
+.center-row {
+  justify-content: center;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -238,6 +242,24 @@ h1 {
   font-size: 1rem;
 }
 
+.timer-wrap {
+  width: 100%;
+  height: 14px;
+  border-radius: 999px;
+  background: #e6edf9;
+  overflow: hidden;
+  margin: 10px 0 18px;
+  border: 1px solid #d1ddf1;
+}
+
+.timer-bar {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb 0%, #60a5fa 100%);
+  transform-origin: left center;
+  transform: scaleX(1);
+}
+
 .recording-area {
   display: flex;
   justify-content: center;
@@ -245,8 +267,8 @@ h1 {
 }
 
 .record-btn {
-  min-width: 180px;
-  min-height: 72px;
+  min-width: 220px;
+  min-height: 78px;
   padding: 16px 24px;
   background: #eaf1ff;
   color: #1743a8;
